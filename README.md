@@ -66,9 +66,8 @@ visao traseira
 visao frontal
 
 
+![image](https://github.com/user-attachments/assets/fdd9eb96-1f00-4d3f-b302-3e9ed4c324bc)
 
-
-![image](https://github.com/user-attachments/assets/a6f0d751-db6f-4c32-8e9f-84352b79c3a2)
 
 imagem da tampa
 
