@@ -53,7 +53,12 @@ O dashboard exibe as seguintes informações:
 
 - Caixa impressa em 3D projetada no [**Onshape**](https://www.onshape.com/)
 https://cad.onshape.com/documents/d5bf3e8aec9efe74c95e4767/w/c13b762c255baec64c60f23f/e/00f9ddf429701c9acd36b891?renderMode=0&uiState=68658c0a88b15d56732ca4c4
-![image](https://github.com/user-attachments/assets/9010bae8-edba-41b9-8cd1-254abb99af8d)
+![image](https://github.com/user-attachments/assets/9010bae8-edba-41b9-8cd1-254abb99af8d
+visao traseira
+
+
+![image](https://github.com/user-attachments/assets/695102de-1351-43e3-b82e-363d3446b188)
+visao frontal
 
 
 - Design compacto e funcional, com espaço para todos os componentes e acesso aos botões.
