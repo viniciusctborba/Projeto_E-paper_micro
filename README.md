@@ -81,3 +81,8 @@ foto
 | Google Calendar API | Consulta de eventos da agenda |
 
 ---
+## ⚙️ Hardware
+
+![image](https://github.com/user-attachments/assets/52820cd5-343a-42df-9ebd-8fa8412ee668)
+
+esquema de montagem feito no Fritzing
