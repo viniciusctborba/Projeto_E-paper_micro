@@ -1,14 +1,22 @@
 # 📘 Projeto E-Paper Micro
 
-Dashboard interativo em papel eletrônico (e-paper), desenvolvido para exibir informações úteis de forma clara, conectada e de baixo consumo energético.
+Dashboard interativo em papel eletrônico, composto por duas partes distintas:
 
-## 💡 Descrição
+1. **Coletor de dados (Python)**  
+   Executado em um dispositivo ou servidor à parte, utiliza APIs para coletar:
+   - Previsão do tempo (Meteoblue)
+   - Notícias (NewsAPI)
+   - E‑mails filtrados 
+   - Eventos da agenda
+   - Posts de subreddits (via Reddit API)
 
-Este projeto consiste em um **dashboard informativo** exibido em uma tela **e-paper** controlada por um **ESP32-S3**. Ele é capaz de exibir diversos tipos de dados em tempo real, utilizando diferentes APIs e serviços. A interface é atualizada de acordo com filtros definidos pelo usuário e pode ser interagida com botões físicos.
+   Esses dados são enviados como JSON via *serial* através do **MQTT**.
 
-A caixa que abriga o hardware foi modelada no **Onshape** e impressa em **3D**, garantindo portabilidade e estética.
+2. **Controlador de exibição (Arduino)**  
+   Executado no **ESP32-S3**, recebe os JSONs via serial e renderiza na tela **e-paper 4.2"** usando um sketch em C++/Arduino.
 
----
+A caixa foi modelada no **Onshape** e impressa em **3D** para integrar os componentes.
+--
 
 ## 🚀 Funcionalidades
 
