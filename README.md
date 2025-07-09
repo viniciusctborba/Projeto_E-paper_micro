@@ -66,6 +66,12 @@ visao traseira
 visao frontal
 
 
+
+
+![image](https://github.com/user-attachments/assets/a6f0d751-db6f-4c32-8e9f-84352b79c3a2)
+
+imagem da tampa
+
 - Design compacto e funcional, com espaço para todos os componentes e acesso aos botões.
 
 ---
