@@ -1,0 +1,46 @@
+{
+  "paginas": [
+    {
+      "numeroPagina": 1,
+      "modoPagina": "2x2",
+      "widgets": [
+        {
+          "tipo": "clima",
+          "linha": 0,
+          "coluna": 0,
+          "dados": {
+            "regiao": "Rio de Janeiro"
+          }
+        },
+        {
+          "tipo": "clima",
+          "linha": 0,
+          "coluna": 1,
+          "dados": {
+            "regiao": "Paris"
+          }
+        },
+        {
+          "tipo": "notícias",
+          "linha": 1,
+          "coluna": 0,
+          "dados": {
+            "tema": "Musk"
+          }
+        },
+        {
+          "tipo": "reddit",
+          "linha": 1,
+          "coluna": 1,
+          "dados": {
+            "subreddits": [
+              "Brasil"
+            ],
+            "time_filter": "day",
+            "limit": 7
+          }
+        }
+      ]
+    }
+  ]
+}

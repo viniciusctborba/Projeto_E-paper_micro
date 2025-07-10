@@ -1,0 +1,96 @@
+{
+  "paginas": [
+    {
+      "numeroPagina": 1,
+      "modoPagina": "2x2",
+      "widgets": [
+        {
+          "tipo": "clima",
+          "linha": 0,
+          "coluna": 0,
+          "dados": {
+            "temperatura": "21",
+            "previsao": "nublado",
+            "cidade": "Rio de Janeiro",
+            "data": "2025-07-09",
+            "hora": "20:07"
+          }
+        },
+        {
+          "tipo": "clima",
+          "linha": 0,
+          "coluna": 1,
+          "dados": {
+            "temperatura": "23",
+            "previsao": "nublado",
+            "cidade": "Paris",
+            "data": "2025-07-09",
+            "hora": "01:07"
+          }
+        },
+        {
+          "tipo": "notícias",
+          "linha": 1,
+          "coluna": 0,
+          "dados": {
+            "tema": "Musk",
+            "noticias": [
+              "Fizeram as pazes? Em meio à briga, Musk elogia Trump publicamente",
+              "Robotáxi da Tesla faz barbeiragem e bate em carro estacionado; assista",
+              "IA de Musk: empresa é processada por causar poluição",
+              "Elon Musk não usa computador? Entenda a mais nova polêmica",
+              "No divórcio de Trump e Musk, quem pode sair ganhando é Bezos; entenda",
+              "Trump sugere cortar subsídios de empresas de Musk para economizar dinheiro",
+              "Partido político de Elon Musk pode ganhar relevância nos EUA?"
+            ]
+          }
+        },
+        {
+          "tipo": "reddit",
+          "linha": 1,
+          "coluna": 1,
+          "dados": {
+            "subreddit": "r/Brasil",
+            "posts": [
+              {
+                "titulo": "O nível dos super ricos que super pobres de direita são contra taxar",
+                "upvotes": 1560,
+                "comentarios": 360
+              },
+              {
+                "titulo": "O top 1% trabalha tão duro, se pagarem imposto o país derrete /s",
+                "upvotes": 1270,
+                "comentarios": 89
+              },
+              {
+                "titulo": "Atlas: 58% dos brasileiros são a favor de taxar bilionários, bancos e bets",
+                "upvotes": 957,
+                "comentarios": 115
+              },
+              {
+                "titulo": "blá-blá-blá tarifa blá-blá-blá",
+                "upvotes": 768,
+                "comentarios": 47
+              },
+              {
+                "titulo": "IA de Elon Musk diz que foi libertada dos \"filtros woke\" e glorifica Hitler depois de atualização",
+                "upvotes": 766,
+                "comentarios": 123
+              },
+              {
+                "titulo": "Flávio Bolsonaro defende afrouxamento da Lei da Ficha Limpa",
+                "upvotes": 750,
+                "comentarios": 110
+              },
+              {
+                "titulo": "Trump manda carta a Lula e anuncia tarifa de 50% sobre produtos brasileiros",
+                "upvotes": 709,
+                "comentarios": 379
+              }
+            ]
+          }
+        }
+      ]
+    }
+  ]
+}
