@@ -1,0 +1,934 @@
+#include <GxEPD2_BW.h>
+#include <U8g2_for_Adafruit_GFX.h>
+#include <GFButton.h>
+#include <ArduinoJson.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+#include <MQTT.h>
+#include <time.h>
+#include "certificados.h"
+
+
+GxEPD2_420_GDEY042T81 modeloTela(10, 14, 15, 16);
+
+GxEPD2_BW<GxEPD2_420_GDEY042T81, GxEPD2_420_GDEY042T81::HEIGHT> tela(modeloTela);
+
+U8G2_FOR_ADAFRUIT_GFX fontes;
+
+GFButton botaoA(21);
+GFButton botaoV(47);
+
+
+WiFiClientSecure conexaoSegura;
+MQTTClient mqtt(8192);
+
+const char* SSID = "Projeto";
+const char* SENHA = "2022-11-07";
+
+const char* MQTT_BROKER = "mqtt.janks.dev.br";
+const int MQTT_PORTA = 8883;
+const char* MQTT_TOPICO = "dashboard";
+const char* MQTT_ID_CLIENTE = "mqttx_4c99c9aa";
+
+const char* MQTT_USER = "aula";
+const char* MQTT_SENHA = "zowmad-tavQez";
+
+JsonDocument Dados;
+
+const char* servidorNTP = "pool.ntp.org";
+const long gmt = -3 * 3600;
+const int horaVerao = 0;
+const char* diasSemana[7] = { "dom", "seg", "ter", "qua", "qui", "sex", "sab" };
+const char* meses[12] = { "jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez" };
+const char* mesesCompletos[12] = { "JANEIRO", "FEVEREIRO", "MARÇO", "ABRIL", "MAIO", "JUNHO", "JULHO", "AGOSTO", "SETEMBRO", "OUTUBRO", "NOVEMBRO", "DEZEMBRO" };
+struct tm tempo;
+
+int pag_atual = 0;
+const int tot_pag = 3;
+const int max_itens_widget = 5;
+const int buzzer = 36;
+
+String layout[tot_pag][2][2];
+String modos[tot_pag];
+String hora = "--:--";
+String data = "--/--/----";
+
+
+void setup() {
+
+  Serial.begin(115200);
+  delay(500);
+  Serial.println("\n Caregando...");
+
+  reconectarWiFi();
+
+  configTime(gmt, horaVerao, servidorNTP);
+
+  if (!getLocalTime(&tempo)) {
+    Serial.println("Falha ao obter a hora");
+
+  } else {
+    Serial.println("Hora sincronizada!");
+  }
+
+  conexaoSegura.setCACert(certificado1);
+  mqtt.begin(MQTT_BROKER, MQTT_PORTA, conexaoSegura);
+  mqtt.onMessage(mqttCallBack);
+  mqtt.setKeepAlive(10);
+  reconectarMQTT();
+
+  tela.init();
+  tela.setRotation(0);
+  tela.fillScreen(GxEPD_WHITE);
+  tela.display(true);
+
+  fontes.begin(tela);
+  fontes.setBackgroundColor(GxEPD_WHITE);
+  fontes.setForegroundColor(GxEPD_BLACK);
+  fontes.setFontMode(1);
+
+  pinMode(buzzer, OUTPUT);
+  botaoA.setPressHandler(botaoAvanca);
+  botaoA.setDebounceTime(50);
+  botaoV.setPressHandler(botaoVolta);
+  botaoV.setDebounceTime(50);
+}
+
+void reconectarWiFi() {
+
+  if (WiFi.status() != WL_CONNECTED) {
+
+    WiFi.begin(SSID, SENHA);
+    Serial.print("Conectando ao WiFi...");
+
+    while (WiFi.status() != WL_CONNECTED) {
+
+      Serial.print(".");
+      delay(1000);
+    }
+
+    Serial.print("conectado!\nEndereço IP: ");
+    Serial.println(WiFi.localIP());
+  }
+}
+
+void reconectarMQTT() {
+
+  if (!mqtt.connected()) {
+
+    Serial.print("Conectando MQTT...");
+
+    while (!mqtt.connected()) {
+
+      mqtt.connect(MQTT_ID_CLIENTE, MQTT_USER, MQTT_SENHA);
+      Serial.print(".");
+      delay(1000);
+    }
+
+    Serial.println(" conectado!");
+    mqtt.subscribe(MQTT_TOPICO, 0);
+  }
+}
+
+void somSucesso() {
+
+  tone(buzzer, 1200, 100);
+  delay(100);
+  tone(buzzer, 1600, 150);
+}
+
+void somErro() {
+
+  tone(buzzer, 250, 700);
+}
+
+void atualizaHora() {
+
+  if (!getLocalTime(&tempo)) {
+    Serial.println("Falha ao atualizar a hora local");
+    return;
+  }
+
+  char bufferData[20];
+
+  sprintf(bufferData, "%s, %d de %s", diasSemana[tempo.tm_wday], tempo.tm_mday, meses[tempo.tm_mon]);
+
+  data = String(bufferData);
+}
+
+
+void widgetCalendario(int x, int y, int larg, int alt) {
+
+  bool grande = (larg > 250 && alt > 200);
+
+  fontes.setFont(grande ? u8g2_font_helvB18_tf : u8g2_font_helvB12_tf);
+
+  char titulo[30];
+  sprintf(titulo, "%s - %d", mesesCompletos[tempo.tm_mon], tempo.tm_year + 1900);
+
+  int tit_larg = fontes.getUTF8Width(titulo);
+  fontes.drawUTF8(x + (larg - tit_larg) / 2, y + 25, titulo);
+
+  int largCel = (larg - 28) / 7;
+  int altCel = (alt - 60) / 7;
+
+  int quadLarg = 7 * largCel;
+  int quadX = x + (larg - quadLarg) / 2;
+  int quadY = y + 50;
+
+  fontes.setFont(grande ? u8g2_font_helvB12_tf : u8g2_font_helvR08_tf);
+
+  const char* dias[7] = { "DOM", "SEG", "TER", "QUA", "QUI", "SEX", "SAB" };
+  const char* diasIni[7] = { "D", "S", "T", "Q", "Q", "S", "S" };
+
+  for (int i = 0; i < 7; i++) {
+
+    int diaX = quadX + (i * largCel) + (largCel / 2) - (grande ? 18 : (i == 0 || i == 6 ? 3 : 2));
+    fontes.drawUTF8(diaX, quadY, grande ? dias[i] : diasIni[i]);
+  }
+
+  int diasNoMes;
+  int mes = tempo.tm_mon;
+  int ano = tempo.tm_year + 1900;
+
+  if (mes == 1) {
+
+    bool bissexto = (ano % 4 == 0 && ano % 100 != 0) || (ano % 400 == 0);
+    diasNoMes = bissexto ? 29 : 28;
+  } else if (mes == 3 || mes == 5 || mes == 8 || mes == 10) {
+    diasNoMes = 30;
+  } else {
+    diasNoMes = 31;
+  }
+
+  int primeiroDia = (tempo.tm_wday - (tempo.tm_mday - 1) % 7 + 7) % 7;
+
+  fontes.setFont(grande ? u8g2_font_helvR12_tf : u8g2_font_helvR08_tf);
+
+  int dia = 1;
+  char bufferDia[3];
+
+  int celY = quadY + 20;
+
+  for (int linha = 0; linha < 6; linha++) {
+    for (int col = 0; col < 7; col++) {
+
+      int x = quadX + col * largCel;
+      int y = celY + linha * altCel;
+      tela.drawRect(x, y, largCel, altCel, GxEPD_BLACK);
+
+      if ((linha == 0 && col < primeiroDia) || dia > diasNoMes) {
+        continue;
+      }
+
+      bool hoje = (dia == tempo.tm_mday);
+
+      if (hoje) {
+
+        tela.fillRect(x, y, largCel, altCel, GxEPD_BLACK);
+        fontes.setForegroundColor(GxEPD_WHITE);
+        fontes.setBackgroundColor(GxEPD_BLACK);
+      } else {
+
+        fontes.setForegroundColor(GxEPD_BLACK);
+        fontes.setBackgroundColor(GxEPD_WHITE);
+      }
+
+      itoa(dia, bufferDia, 10);
+      int xNum = x + (largCel / 2) - (fontes.getUTF8Width(bufferDia) / 2);
+      int yNum = y + (altCel / 2) + 4;
+      fontes.drawUTF8(xNum, yNum, bufferDia);
+
+      if (hoje) {
+        fontes.setFontMode(1);
+      }
+      dia++;
+    }
+  }
+
+  fontes.setForegroundColor(GxEPD_BLACK);
+  fontes.setBackgroundColor(GxEPD_WHITE);
+  Serial.println("Calendário OK");
+}
+
+
+void widgetLembretes(int x, int y, int larg, int alt, JsonObject dados) {
+
+  if (!dados) return;
+
+  JsonArray lembretes = dados["lembretes"];
+
+  bool grande = (larg > 250 && alt > 200);
+
+  int margem = grande ? 10 : 5;
+  int espaco = grande ? 40 : 30;
+  int margemEntre = grande ? 8 : 3;
+
+  fontes.setFont(grande ? u8g2_font_helvB18_tf : u8g2_font_helvB10_tf);
+  const char* titulo = "LISTA DE TAREFAS";
+  int tit_larg = fontes.getUTF8Width(titulo);
+
+  fontes.drawUTF8(x + (larg - tit_larg) / 2, y + (grande ? 26 : 15), titulo);
+
+  fontes.setFont(grande ? u8g2_font_helvR12_tf : u8g2_font_helvR08_tf);
+  int altLinha = grande ? 15 : 10;
+  int tamCheckbox = grande ? 14 : 8;
+  int espacoCheckbox = 5;
+  int txtX = x + margem + tamCheckbox + espacoCheckbox;
+  int larg_max = larg - (txtX - x) - margem;
+
+  int cursorY = y + espaco;
+
+  for (int i = 0; i < lembretes.size() && i < max_itens_widget; i++) {
+
+    JsonObject lembrete = lembretes[i];
+    String texto = lembrete["texto"];
+    bool ok = lembrete["ok"];
+
+    if (texto == "") continue;
+
+    String linhas[10];
+    int numL = 0;
+
+    char buffer[100];
+    texto.toCharArray(buffer, sizeof(buffer));
+
+    char* palavra = strtok(buffer, " ");
+    String linhaAtual;
+
+    while (palavra != NULL) {
+
+      String linhaTeste = linhaAtual + (linhaAtual.length() > 0 ? " " : "") + palavra;
+
+      if (fontes.getUTF8Width(linhaTeste.c_str()) > larg_max) {
+
+        linhas[numL++] = linhaAtual;
+        linhaAtual = palavra;
+      } else {
+        linhaAtual = linhaTeste;
+      }
+      palavra = strtok(NULL, " ");
+    }
+
+    linhas[numL++] = linhaAtual;
+
+    int padding = grande ? 12 : 6;
+    int altTxt = numL * altLinha;
+    int altTot = max(altTxt, tamCheckbox) + padding;
+
+    if (cursorY + altTot > y + alt) {
+      break;
+    }
+
+    int yCheckbox = cursorY + (altTot / 2) - (tamCheckbox / 2);
+    tela.drawRect(x + margem, yCheckbox, tamCheckbox, tamCheckbox, GxEPD_BLACK);
+
+    if (ok) {
+
+      int xCheck = x + margem;
+      int yCheck = yCheckbox;
+      tela.drawLine(xCheck, yCheck, xCheck + tamCheckbox, yCheck + tamCheckbox, GxEPD_BLACK);
+      tela.drawLine(xCheck, yCheck + tamCheckbox, xCheck + tamCheckbox, yCheck, GxEPD_BLACK);
+    }
+
+    int txtY = cursorY + (altTot / 2) - (altTxt / 2);
+
+    for (int j = 0; j < numL; j++) {
+
+      fontes.drawUTF8(txtX, txtY + altLinha - 2 + (j * altLinha), linhas[j].c_str());
+    }
+
+    cursorY += altTot + margemEntre;
+  }
+}
+
+
+void iconeClima(int x, int y, const char* previsao, bool grande) {
+
+  int raioSol = grande ? 14 : 9;
+  int distRaio1 = grande ? 17 : 11;
+  int distRaio2 = grande ? 22 : 15;
+
+  int nuvemX = grande ? -12 : -7;
+  int nuvemY = grande ? 5 : 3;
+  int raioNuvem1 = grande ? 12 : 7;
+  int raioNuvem2 = grande ? 15 : 9;
+  int raioNuvem3 = grande ? 13 : 8;
+  int retNuvemX = grande ? -12 : -7;
+  int retNuvemY = grande ? 5 : 4;
+  int retNuvemLarg = grande ? 30 : 20;
+  int retNuvemAlt = grande ? 12 : 8;
+
+  int gotaY = retNuvemY + retNuvemAlt + (grande ? 4 : 2);
+  int gotaComp = grande ? 8 : 5;
+  int gotaX = grande ? 8 : 6;
+
+  if (strcmp(previsao, "ensolarado") == 0) {
+
+    tela.fillCircle(x, y, raioSol, GxEPD_BLACK);
+    for (int i = 0; i < 360; i += 45) {
+
+      int x1 = x + cos(radians(i)) * distRaio1;
+      int y1 = y + sin(radians(i)) * distRaio1;
+      int x2 = x + cos(radians(i)) * distRaio2;
+      int y2 = y + sin(radians(i)) * distRaio2;
+
+      tela.drawLine(x1, y1, x2, y2, GxEPD_BLACK);
+    }
+  }
+
+  else if (strcmp(previsao, "nublado") == 0) {
+
+    tela.fillCircle(x + nuvemX, y + nuvemY, raioNuvem1, GxEPD_BLACK);
+    tela.fillCircle(x, y, raioNuvem2, GxEPD_BLACK);
+    tela.fillCircle(x - nuvemX, y + nuvemY, raioNuvem3, GxEPD_BLACK);
+    tela.fillCircle(x + nuvemX * 1.5, y + nuvemY, raioNuvem1 - 2, GxEPD_BLACK);
+    tela.fillRect(retNuvemX + x, retNuvemY + y, retNuvemLarg, retNuvemAlt, GxEPD_BLACK);
+  }
+
+  else if (strcmp(previsao, "chuvoso") == 0) {
+
+    tela.fillCircle(x + nuvemX, y + nuvemY, raioNuvem1, GxEPD_BLACK);
+    tela.fillCircle(x, y, raioNuvem2, GxEPD_BLACK);
+    tela.fillCircle(x - nuvemX, y + nuvemY, raioNuvem3, GxEPD_BLACK);
+    tela.fillRect(x - 5, y + 4, 20, 5, GxEPD_BLACK);
+    tela.fillCircle(x + nuvemX * 1.5, y + nuvemY, raioNuvem1 - 2, GxEPD_BLACK);
+    tela.fillRect(retNuvemX + x, retNuvemY + y, retNuvemLarg, retNuvemAlt, GxEPD_BLACK);
+
+    tela.drawLine(x - gotaX, y + gotaY, x - gotaX + 2, y + gotaY + gotaComp, GxEPD_BLACK);
+    tela.drawLine(x, y + gotaY, x + 2, y + gotaY + gotaComp, GxEPD_BLACK);
+    tela.drawLine(x + gotaX, y + gotaY, x + gotaX + 2, y + gotaY + gotaComp, GxEPD_BLACK);
+  }
+}
+
+void widgetClima(int x, int y, int larg, int alt, JsonObject dados) {
+
+  if (!dados) return;
+
+  String hora = dados["hora"].as<String>();
+  String data = dados["data"].as<String>();
+
+  String tempOriginal = dados["temperatura"].as<String>();
+  String tempFormatada = tempOriginal;
+
+  int pontoIndex = tempOriginal.indexOf('.');
+  if (pontoIndex != -1) {
+    tempFormatada = tempOriginal.substring(0, pontoIndex + 2);
+  }
+
+  String temperatura = tempFormatada + "°C";
+  String cidade = dados["cidade"];
+
+  bool grande = (larg > 250 && alt > 200);
+
+  int txt_larg;
+
+  const int ajusteY = -8;
+
+  const int espaco_dt_hr = grande ? 70 : 50;
+  const int espaco_hr_temp = grande ? 50 : 35;
+  const int espaco_temp_local = grande ? 50 : 35;
+  const int padding_inf = grande ? 5 : 5;
+  int tot_alt = espaco_dt_hr + espaco_hr_temp + espaco_temp_local + padding_inf;
+
+  int offsetY = y + ajusteY;
+  if (tot_alt < alt) {
+    offsetY = y + (alt - tot_alt) / 2 + ajusteY;
+  }
+
+  int dataY = offsetY + (grande ? 20 : 20);
+  int horaY = dataY + espaco_dt_hr;
+  int tempY = horaY + espaco_hr_temp;
+  int localY = tempY + espaco_temp_local;
+
+  fontes.setFont(grande ? u8g2_font_helvB18_tf : u8g2_font_helvB12_tf);
+  txt_larg = fontes.getUTF8Width(data.c_str());
+  fontes.drawUTF8(x + (larg - txt_larg) / 2, dataY, data.c_str());
+
+  fontes.setFont(grande ? u8g2_font_logisoso62_tn : u8g2_font_logisoso42_tf);
+  txt_larg = fontes.getUTF8Width(hora.c_str());
+  fontes.drawUTF8(x + (larg - txt_larg) / 2, horaY, hora.c_str());
+
+  fontes.setFont(grande ? u8g2_font_logisoso42_tf : u8g2_font_logisoso28_tf);
+
+  int larg_icon = grande ? 60 : 45;
+  int espaco = grande ? 12 : 8;
+  int larg_temp = fontes.getUTF8Width(temperatura.c_str());
+  int tot_larg = larg_icon + espaco + larg_temp;
+  int inicio_tempX = x + (larg - tot_larg) / 2;
+
+  if (dados.containsKey("previsao")) {
+
+    String previsao = dados["previsao"];
+    iconeClima(inicio_tempX + larg_icon / 2, tempY, previsao.c_str(), grande);
+  } else {
+
+    const char* iconTraco = "--";
+    int iconTracoLarg = fontes.getUTF8Width(iconTraco);
+    int iconTracoX = inicio_tempX + (larg_icon / 2) - (iconTracoLarg / 2);
+
+    fontes.setFont(grande ? u8g2_font_helvB18_tf : u8g2_font_helvB12_tf);
+    fontes.drawUTF8(iconTracoX, tempY + (grande ? 10 : 5), iconTraco);
+
+    fontes.setFont(grande ? u8g2_font_logisoso42_tf : u8g2_font_logisoso28_tf);
+  }
+
+  fontes.drawUTF8(inicio_tempX + larg_icon + espaco, tempY + (grande ? 15 : 10), temperatura.c_str());
+
+  fontes.setFont(grande ? u8g2_font_helvB18_tf : u8g2_font_helvR10_tf);
+  int larg_local = fontes.getUTF8Width(cidade.c_str());
+  int inicio_localX = x + (larg - larg_local) / 2;
+
+  fontes.drawUTF8(inicio_localX, localY, cidade.c_str());
+}
+
+
+void widgetEmail(int x, int y, int larg, int alt, JsonObject dados) {
+
+  if (!dados) return;
+  JsonArray emails = dados["emails"];
+
+  bool grande = (larg > 250 && alt > 200);
+  int margem = grande ? 10 : 8;
+  int espaco = grande ? 35 : 30;
+
+  fontes.setFont(grande ? u8g2_font_helvB14_tr : u8g2_font_helvB12_tr);
+  const char* titulo = "CAIXA DE ENTRADA";
+  int tit_larg = fontes.getUTF8Width(titulo);
+  fontes.drawUTF8(x + (larg - tit_larg) / 2, y + (grande ? 20 : 18), titulo);
+
+  int altLinha = grande ? 15 : 12;
+  int altTot = (altLinha * 2) + (grande ? 8 : 6);
+  int cursorY = y + espaco;
+
+  for (int i = 0; i < emails.size(); i++) {
+    if (cursorY + altTot > y + alt) break;
+
+    JsonObject email = emails[i];
+    String remetenteOrig = email["remetente"];
+    String assuntoOrig = email["assunto"];
+    String remetente = remetenteOrig;
+    String assunto = assuntoOrig;
+
+    tela.drawRect(x + margem, cursorY, larg - (2 * margem), altTot, GxEPD_BLACK);
+
+    int txtX = x + margem + 5;
+    int yLinha1 = cursorY + altLinha;
+    int yLinha2 = cursorY + 2 * altLinha;
+    int largMax = larg - (2 * margem) - 10;
+
+    fontes.setFont(grande ? u8g2_font_helvB10_tf : u8g2_font_helvB08_tf);
+
+    while (fontes.getUTF8Width((remetente + "...").c_str()) > largMax) {
+      remetente.remove(remetente.length() - 1);
+    }
+
+    if (remetente.length() < remetenteOrig.length()) {
+      remetente += "...";
+    }
+    fontes.drawUTF8(txtX, yLinha1, remetente.c_str());
+
+    fontes.setFont(grande ? u8g2_font_helvB10_tf : u8g2_font_helvB08_tf);
+    fontes.drawUTF8(txtX, yLinha1, remetente.c_str());
+
+    fontes.setFont(grande ? u8g2_font_helvR10_tf : u8g2_font_helvR08_tf);
+    while (fontes.getUTF8Width((assunto + "...").c_str()) > largMax) {
+      assunto.remove(assunto.length() - 1);
+    }
+    if (assunto.length() < assuntoOrig.length()) {
+      assunto += "...";
+    }
+    fontes.drawUTF8(txtX, yLinha2, assunto.c_str());
+    cursorY += altTot + margem;
+  }
+}
+
+
+void widgetNoticias(int x, int y, int larg, int alt, JsonObject dados) {
+
+  if (!dados) return;
+  JsonArray noticias = dados["noticias"];
+
+  bool grande = (larg > 250 && alt > 200);
+  int margem = grande ? 10 : 8;
+  int espaco = grande ? 38 : 30;
+
+  fontes.setFont(grande ? u8g2_font_helvB18_tf : u8g2_font_helvB12_tf);
+  const char* titulo = "ÚLTIMAS NOTICIAS";
+  int tit_larg = fontes.getUTF8Width(titulo);
+  fontes.drawUTF8(x + (larg - tit_larg) / 2, y + (grande ? 28 : 18), titulo);
+
+  fontes.setFont(grande ? u8g2_font_helvR12_tf : u8g2_font_helvR10_tf);
+  int altLinha = grande ? 15 : 12;
+  int cursorY = y + espaco;
+
+  for (int i = 0; i < noticias.size() && i < max_itens_widget; i++) {
+    String manchete = noticias[i].as<String>();
+    if (manchete == "") continue;
+
+    char buffer[150];
+    manchete.toCharArray(buffer, sizeof(buffer));
+
+    String linhas[10];
+    int numL = 0;
+    char* palavra = strtok(buffer, " ");
+    String linhaAtual = "";
+    int larg_max = larg - (2 * margem) - 8;
+
+    while (palavra != NULL) {
+      String linhaTeste = linhaAtual + (linhaAtual.length() > 0 ? " " : "") + palavra;
+      if (fontes.getUTF8Width(linhaTeste.c_str()) > larg_max) {
+        if (numL < 10) linhas[numL++] = linhaAtual;
+        linhaAtual = palavra;
+      } else {
+        linhaAtual = linhaTeste;
+      }
+      palavra = strtok(NULL, " ");
+    }
+    if (numL < 10) {
+      linhas[numL++] = linhaAtual;
+    }
+
+    String linha1 = linhas[0];
+    String linha2 = "";
+    int linhasTot = 1;
+    if (numL > 1) {
+      linha2 = linhas[1];
+      linhasTot = 2;
+      if (numL > 2) {
+        while (fontes.getUTF8Width((linha2 + "...").c_str()) > larg_max - 8) {
+          linha2.remove(linha2.length() - 1);
+        }
+        linha2 += "...";
+      }
+    }
+
+    int altTot = (linhasTot * altLinha) + 12;
+    if (cursorY + altTot > y + alt) break;
+
+    tela.drawRect(x + margem, cursorY, larg - (2 * margem), altTot, GxEPD_BLACK);
+    fontes.drawUTF8(x + margem + 4, cursorY + altLinha + 3, linha1.c_str());
+    if (linhasTot > 1) {
+      fontes.drawUTF8(x + margem + 4, cursorY + (2 * altLinha) + 3, linha2.c_str());
+    }
+    cursorY += altTot + margem;
+  }
+}
+
+
+void widgetEventos(int x, int y, int larg, int alt, JsonObject dados) {
+
+  if (!dados) return;
+
+  JsonArray eventos = dados["eventos"];
+
+  bool grande = (larg > 250 && alt > 200);
+  int margem = grande ? 10 : 8;
+  int espaco = grande ? 38 : 30;
+
+  fontes.setFont(grande ? u8g2_font_helvB18_tf : u8g2_font_helvB12_tf);
+  const char* titulo = "EVENTOS";
+  int tit_larg = fontes.getUTF8Width(titulo);
+  fontes.drawUTF8(x + (larg - tit_larg) / 2, y + (grande ? 28 : 18), titulo);
+
+  int altLinha = grande ? 15 : 12;
+  int cursorY = y + espaco;
+
+  for (int i = 0; i < eventos.size(); i++) {
+
+    JsonObject evento = eventos[i].as<JsonObject>();
+
+    String descricaoOrig = evento["evento"];
+    String data = evento["data"];
+    String hora = evento["hora"];
+
+
+    if (descricaoOrig == "") continue;
+
+    String descricao = descricaoOrig;
+    String infoDataHora = data + "  " + hora;
+
+
+    int largMax = larg - (2 * margem) - 8;
+    fontes.setFont(grande ? u8g2_font_helvR10_tf : u8g2_font_helvR08_tf);
+    while (fontes.getUTF8Width((descricao + "...").c_str()) > largMax) {
+      descricao.remove(descricao.length() - 1);
+    }
+    if (descricaoOrig.length() > descricao.length()) {
+      descricao += "...";
+    }
+
+    int altTot = (altLinha * 2) + 12;
+    if (cursorY + altTot > y + alt) {
+      break;
+    }
+
+    tela.drawRect(x + margem, cursorY, larg - (2 * margem), altTot, GxEPD_BLACK);
+
+    fontes.setFont(grande ? u8g2_font_helvB10_tf : u8g2_font_helvB08_tf);
+    fontes.drawUTF8(x + margem + 4, cursorY + altLinha, infoDataHora.c_str());
+
+    fontes.setFont(grande ? u8g2_font_helvR10_tf : u8g2_font_helvR08_tf);
+    fontes.drawUTF8(x + margem + 4, cursorY + (2 * altLinha), descricao.c_str());
+
+    cursorY += altTot + margem;
+  }
+}
+
+void widgetReddit(int x, int y, int larg, int alt, JsonObject dados) {
+
+  if (!dados) return;
+
+  JsonArray posts = dados["posts"];
+  String subreddit = dados["subreddit"].as<String>();
+
+  bool grande = (larg > 250 && alt > 200);
+  int margem = grande ? 10 : 8;
+  int espaco = grande ? 38 : 30;
+
+  fontes.setFont(grande ? u8g2_font_helvB14_tr : u8g2_font_helvB12_tr);
+  int tit_larg = fontes.getUTF8Width(subreddit.c_str());
+  fontes.drawUTF8(x + (larg - tit_larg) / 2, y + (grande ? 22 : 18), subreddit.c_str());
+
+  int altLinha = grande ? 15 : 12;
+  int altTot = (altLinha * 2) + (grande ? 8 : 6);
+  int cursorY = y + espaco;
+
+  for (int i = 0; i < posts.size(); i++) {
+
+    if (cursorY + altTot > y + alt) {
+      break;
+    }
+
+    JsonObject post = posts[i];
+    String upvotesStr = String(post["upvotes"].as<int>());
+    String tituloPostOrig = post["titulo"];
+    String tituloPost = tituloPostOrig;
+
+    tela.drawRect(x + margem, cursorY, larg - (2 * margem), altTot, GxEPD_BLACK);
+
+    int txtX = x + margem + 5;
+    int yLinha1 = cursorY + altLinha;
+    int yLinha2 = cursorY + 2 * altLinha;
+    int largMax = larg - (2 * margem) - 10;
+
+    fontes.setFont(grande ? u8g2_font_helvB10_tf : u8g2_font_helvB08_tf);
+
+    int setaX = txtX;
+    int setaY = yLinha1 - (grande ? 9 : 7);
+    int setaLarg = grande ? 8 : 6;
+    int setaAlt = grande ? 8 : 6;
+
+    tela.fillTriangle(setaX, setaY + setaAlt, setaX + setaLarg, setaY + setaAlt, setaX + setaLarg / 2, setaY, GxEPD_BLACK);
+
+    fontes.drawUTF8(setaX + setaLarg + 4, yLinha1, upvotesStr.c_str());
+
+    fontes.setFont(grande ? u8g2_font_helvR10_tf : u8g2_font_helvR08_tf);
+
+    while (fontes.getUTF8Width((tituloPost + "...").c_str()) > largMax) {
+      tituloPost.remove(tituloPost.length() - 1);
+    }
+    if (tituloPost.length() < tituloPostOrig.length()) {
+      tituloPost += "...";
+    }
+    fontes.drawUTF8(txtX, yLinha2, tituloPost.c_str());
+
+
+    cursorY += altTot + margem;
+  }
+}
+
+void desenhaQuadrante() {
+
+  tela.fillScreen(GxEPD_WHITE);
+  fontes.setFontMode(1);
+  fontes.setForegroundColor(GxEPD_BLACK);
+
+  String modoPag = modos[pag_atual];
+
+  int numL = 1;
+  int numC = 1;
+
+  if (modoPag == "1x2") {
+    numC = 2;
+  } else if (modoPag == "2x1") {
+    numL = 2;
+  } else if (modoPag == "2x2") {
+    numL = 2;
+    numC = 2;
+  }
+
+  int larguraQuad = tela.width() / numC;
+  int alturaQuad = tela.height() / numL;
+
+  for (int l = 0; l < numL; l++) {
+    for (int c = 0; c < numC; c++) {
+
+      int quadX = c * larguraQuad;
+      int quadY = l * alturaQuad;
+
+      String tipoWidget = layout[pag_atual][l][c];
+
+      JsonObject dadosWidget = encontraDadosWidget(pag_atual, l, c);
+
+      if (tipoWidget == "clima") {
+        widgetClima(quadX, quadY, larguraQuad, alturaQuad, dadosWidget);
+      } else if (tipoWidget == "agenda") {
+        widgetCalendario(quadX, quadY, larguraQuad, alturaQuad);
+      } else if (tipoWidget == "email") {
+        widgetEmail(quadX, quadY, larguraQuad, alturaQuad, dadosWidget);
+      } else if (tipoWidget == "notícias") {
+        widgetNoticias(quadX, quadY, larguraQuad, alturaQuad, dadosWidget);
+      } else if (tipoWidget == "lembretes") {
+        widgetLembretes(quadX, quadY, larguraQuad, alturaQuad, dadosWidget);
+      } else if (tipoWidget == "eventos") {
+        widgetEventos(quadX, quadY, larguraQuad, alturaQuad, dadosWidget);
+      } else if (tipoWidget == "reddit") {
+        widgetReddit(quadX, quadY, larguraQuad, alturaQuad, dadosWidget);
+      }
+    }
+  }
+
+  if (numC > 1) {
+    tela.drawLine(larguraQuad, 0, larguraQuad, tela.height() - 1, GxEPD_BLACK);
+  }
+  if (numL > 1) {
+    tela.drawLine(0, alturaQuad, tela.width() - 1, alturaQuad, GxEPD_BLACK);
+  }
+
+  tela.display(true);
+  Serial.println("Desenha quadrante OK");
+  Serial.print("Página desenhada: ");
+  Serial.println(pag_atual);
+}
+
+
+void mqttCallBack(String topico, String txtJson) {
+
+  Serial.println(topico + ": " + txtJson);
+
+  atualizaHora();
+
+  DeserializationError erro = deserializeJson(Dados, txtJson);
+
+  if (erro) {
+
+
+    Serial.println("Erro na desserialização do Json:");
+    Serial.println(erro.c_str());
+    somErro();
+    return;
+  }
+
+  processaJson();
+}
+
+
+void processaJson() {
+
+  for (int p = 0; p < tot_pag; p++) {
+    modos[p] = "1x1";
+    for (int l = 0; l < 2; l++) {
+      for (int c = 0; c < 2; c++) {
+        layout[p][l][c] = "";
+      }
+    }
+  }
+
+  JsonArray paginas = Dados["paginas"];
+
+  for (JsonObject pagina : paginas) {
+
+    int id_pagina = pagina["numeroPagina"].as<int>() - 1;
+    if (id_pagina < 0 || id_pagina >= tot_pag) continue;
+
+    modos[id_pagina] = pagina["modoPagina"].as<String>();
+
+    JsonArray widgets = pagina["widgets"];
+
+    for (JsonObject widget : widgets) {
+
+      int linha = widget["linha"].as<int>();
+      int coluna = widget["coluna"].as<int>();
+      String tipo = widget["tipo"].as<String>();
+
+      if (linha >= 0 && linha < 2 && coluna >= 0 && coluna < 2) {
+
+        layout[id_pagina][linha][coluna] = tipo;
+      }
+    }
+  }
+
+  desenhaQuadrante();
+  somSucesso();
+}
+
+JsonObject encontraDadosWidget(int pag, int linha, int col) {
+
+  JsonArray paginas = Dados["paginas"];
+
+  for (int i = 0; i < paginas.size(); i++) {
+
+    JsonObject pagina = paginas[i].as<JsonObject>();
+
+    if ((pagina["numeroPagina"].as<int>() - 1) == pag) {
+
+      JsonArray widgets = pagina["widgets"];
+
+      for (int w = 0; w < widgets.size(); w++) {
+
+        JsonObject widget = widgets[w].as<JsonObject>();
+        if (widget["linha"].as<int>() == linha && widget["coluna"].as<int>() == col) {
+          return widget["dados"];
+        }
+      }
+    }
+  }
+  return JsonObject();
+}
+
+
+void botaoAvanca(GFButton& botao) {
+
+  Serial.println("Passou a página!");
+
+  pag_atual++;
+
+  if (pag_atual >= tot_pag) {
+    pag_atual = 0;
+  }
+
+  Serial.print("Mudou para a página: ");
+  Serial.println(pag_atual);
+
+  desenhaQuadrante();
+  somSucesso();
+}
+
+void botaoVolta(GFButton& botao) {
+
+  Serial.println("Voltou a página!");
+
+  pag_atual--;
+
+  if (pag_atual < 0) {
+    pag_atual = tot_pag - 1;
+  }
+
+  Serial.print("Mudou para a página: ");
+  Serial.println(pag_atual);
+
+  desenhaQuadrante();
+  somSucesso();
+}
+
+
+void loop() {
+
+  botaoA.process();
+  botaoV.process();
+
+  reconectarWiFi();
+  reconectarMQTT();
+  mqtt.loop();
+}
